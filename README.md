@@ -17,18 +17,26 @@ This tool scrapes Google Business Profiles to find businesses without websites, 
 - Three scraping modes: test, full, debug
 - Polite scraping with anti-detection measures
 - Respects server resources (3-5 sec delays, 2-3 min breaks)
+- Industry-specific scrapers (restaurant and general business)
+- Pagination support (up to 5 pages/100 results)
+- Memory management via browser restarts every 50 businesses
+- **NEW: Incremental saving to prevent data loss on timeouts**
 
-🚧 **Known Issues:**
-- Website detection showing same URL for all businesses (markson59.com)
-- GBP URLs getting duplicated causing only 1 business to save per run
-- Need better unique business tracking
+🚧 **Known Issues (Fixed):**
+- ~~Timeout causing complete data loss~~ - Fixed with incremental saving
+- ~~Memory overflow after ~60 businesses~~ - Fixed with browser restart logic
+
+🚧 **Current Known Issues:**
+- General business scraper sometimes shows duplicate phone numbers across businesses
+- Some businesses may have incomplete address extraction
+- Website detection could be improved for businesses with complex menu structures
 
 📋 **Immediate Next Steps:**
-1. Fix website detection logic in V2 scraper
-2. Ensure unique GBP URLs per business
-3. Create CSV export functionality
-4. Build basic call tracking interface
-5. Address legal compliance for calling
+1. Improve phone number deduplication logic
+2. Build basic call tracking interface (Next.js)
+3. Implement TCPA compliance for B2B calling
+4. Add phone number validation
+5. Create automated scheduling for regular scrapes
 
 ## Target Area
 
