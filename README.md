@@ -48,6 +48,9 @@ web-lead-generator/
 │   ├── google_scraper.py      # V1 scraper (no phone extraction)
 │   ├── google_scraper_v2.py  # V2 scraper (clicks for details)
 │   ├── restaurant_lead_finder.py # Restaurant-specific interactive scraper
+│   ├── general_business/      # General business scraper
+│   │   ├── general_business_scraper.py
+│   │   └── general_business_finder.py
 │   └── config.py              # Scraper configuration
 ├── database/                   # Database schemas
 │   └── schema.sql             # PostgreSQL schema
@@ -65,6 +68,9 @@ web-lead-generator/
 ```bash
 # Restaurant Lead Finder - Interactive location selection
 ./run_interactive.sh
+
+# General Business Finder - Searches for any business type
+./run_general_business_finder.sh
 ```
 
 ### General Scraping Commands
@@ -87,7 +93,8 @@ web-lead-generator/
 ## Features
 
 - **Industry-Specific Scrapers**: Fine-tuned scripts for different business types
-  - Restaurant Lead Finder (currently available)
+  - Restaurant Lead Finder - Optimized for restaurant "Menu" button patterns
+  - General Business Finder - Clicks "Website" links to capture actual URLs
 - **Interactive Mode**: Choose any location to search
 - **Polite Scraping**: 3-5 second delays, 2-3 minute session breaks
 - **Phone Extraction**: Successfully extracts phone numbers

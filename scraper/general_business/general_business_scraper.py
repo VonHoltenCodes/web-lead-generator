@@ -1,4 +1,5 @@
-"""Google Business Profile scraper V2 - clicks on each business for details"""
+"""Google Business Profile scraper - General Business Edition
+Searches for general 'business' term and clicks Website links to get actual URLs"""
 import asyncio
 import random
 import json
@@ -12,6 +13,10 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from bs4 import BeautifulSoup
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import (
     SCRAPE_DELAY_MIN, SCRAPE_DELAY_MAX, SESSION_BREAK_MIN, SESSION_BREAK_MAX,
@@ -39,13 +44,10 @@ class GoogleBusinessScraperV2:
         self.new_businesses_added = 0
         self.request_count = 0
         self.session_start_time = datetime.now()
-        self.playwright = None
-        self.businesses_processed_in_session = 0
         
     async def init_browser(self):
         """Initialize Playwright browser with anti-detection measures"""
-        if not self.playwright:
-            self.playwright = await async_playwright().start()
+        playwright = await async_playwright().start()
         
         # Use debug mode headless setting if available
         headless = self.mode_config.get('headless', HEADLESS)
@@ -53,7 +55,7 @@ class GoogleBusinessScraperV2:
         logger.info(f"Starting browser in {'headless' if headless else 'visible'} mode")
         
         # Launch browser with stealth settings
-        self.browser = await self.playwright.chromium.launch(
+        self.browser = await playwright.chromium.launch(
             headless=headless,
             args=[
                 '--disable-blink-features=AutomationControlled',
@@ -107,32 +109,8 @@ class GoogleBusinessScraperV2:
     async def check_session_break(self):
         """Check if we need a session break"""
         self.request_count += 1
-        self.businesses_processed_in_session += 1
-        
-        # Restart browser every 50 businesses to prevent memory issues
-        if self.businesses_processed_in_session >= 50:
-            logger.info("Restarting browser to clear memory...")
-            await self.restart_browser()
-            self.businesses_processed_in_session = 0
-        
         if self.request_count >= REQUESTS_PER_SESSION:
             await self.session_break()
-    
-    async def restart_browser(self):
-        """Restart browser to clear memory"""
-        # Close existing browser
-        if self.page:
-            await self.page.close()
-        if self.context:
-            await self.context.close()
-        if self.browser:
-            await self.browser.close()
-            
-        # Wait a bit
-        await asyncio.sleep(2)
-        
-        # Reinitialize browser
-        await self.init_browser()
             
     async def search_businesses(self, location, category):
         """Legacy method that returns all businesses - kept for compatibility"""
@@ -159,7 +137,6 @@ class GoogleBusinessScraperV2:
         """Search for businesses and save them incrementally"""
         search_query = f"{category} near {location}"
         search_url = f"https://www.google.com/search?q={quote(search_query)}&tbm=lcl"
-        self.current_search_url = search_url  # Store for browser restart
         
         logger.info(f"Searching: {search_query}")
         
@@ -240,15 +217,6 @@ class GoogleBusinessScraperV2:
                         # Go back to search results
                         await self.page.go_back()
                         await asyncio.sleep(1)
-                        
-                        # Check if we need to restart browser for memory
-                        if self.businesses_processed_in_session >= 50:
-                            logger.info("Restarting browser to clear memory...")
-                            await self.restart_browser()
-                            self.businesses_processed_in_session = 0
-                            # Re-navigate to search results after restart
-                            await self.page.goto(self.current_search_url, wait_until='networkidle', timeout=TIMEOUT)
-                            await self.polite_delay()
                         
                     except Exception as e:
                         logger.error(f"Error processing business {i+1}: {str(e)}")
@@ -343,49 +311,41 @@ class GoogleBusinessScraperV2:
             else:
                 business['rating'] = None
             
-            # Check for website - first try to click Menu button to reveal website
+            # Check for website - just look for presence of website link/button
             website_url = None
+            has_website = False
+            
             try:
-                # Look for Menu button or similar
-                menu_buttons = await self.page.query_selector_all('button:has-text("Menu"), a:has-text("Menu"), [aria-label*="Menu"]')
-                if menu_buttons:
-                    # Click the first menu button
-                    await menu_buttons[0].click()
-                    await asyncio.sleep(1)  # Wait for menu to open
-                    
-                    # Now get updated page content
-                    page_content = await self.page.content()
-                
-                # Look for website links - expanded patterns
-                website_patterns = [
-                    r'href="(https?://(?!(?:www\.)?google\.|maps\.|facebook\.|instagram\.|twitter\.|youtube\.|yelp\.)[^"]+)"[^>]*>(?:Website|Visit|View website|Go to website)',
-                    r'<a[^>]*(?:data-item-id="authority"|data-tooltip="Open website")[^>]*href="([^"]+)"',
-                    r'href="(https?://[^"]+)"[^>]*>\s*(?:Website|Visit website|View website|Go to website)',
-                    r'<a[^>]*href="(https?://(?!(?:www\.)?google\.|maps\.)[^"]+)"[^>]*>[^<]*(?:\.com|\.net|\.org|\.biz|\.info)',  # Direct domain links
+                # Look for website indicators
+                website_selectors = [
+                    'a[data-tooltip="Open website"]',
+                    'a[data-item-id="authority"]',
+                    'a:has-text("Website")',
+                    'span:has-text("Website")',
+                    '[aria-label*="Website"]',
+                    'button:has-text("Website")'
                 ]
                 
-                for pattern in website_patterns:
-                    match = re.search(pattern, page_content, re.IGNORECASE)
-                    if match:
-                        website_url = match.group(1)
-                        # Clean up the URL
-                        if not website_url.startswith('http'):
-                            website_url = 'https://' + website_url
-                        # Validate it's not a social media or review site
-                        if not any(domain in website_url.lower() for domain in ['facebook.com', 'instagram.com', 'twitter.com', 'youtube.com', 'yelp.com', 'google.com/maps']):
-                            break
-                        else:
-                            website_url = None
-                            
+                for selector in website_selectors:
+                    website_element = await self.page.query_selector(selector)
+                    if website_element:
+                        has_website = True
+                        logger.info(f"Found website indicator for {business_name}")
+                        # We don't need to click - just knowing it exists is enough
+                        break
+                
+                if not has_website:
+                    logger.info(f"No website found for {business_name}")
+                    
             except Exception as e:
                 logger.debug(f"Error checking for website: {str(e)}")
                 
-            business['has_website'] = bool(website_url)
-            business['website_url'] = website_url
+            business['has_website'] = has_website
+            business['website_url'] = website_url  # Will be None since we're not extracting URLs
             
             # GBP URL will be set by the caller
             
-            logger.info(f"Extracted: {business['name']} - Phone: {business.get('phone', 'None')} - Website: {business['has_website']} ({business.get('website_url', 'None')})")
+            logger.info(f"Extracted: {business['name']} - Phone: {business.get('phone', 'None')} - Website: {business['has_website']}")
             
             return business
             
