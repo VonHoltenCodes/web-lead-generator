@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Data files
+data/
+scraped_data/
+exports/
+*.csv
+*.json
+
+# Credentials
+credentials.json
+config.json
+secrets/
