@@ -127,70 +127,85 @@ class GoogleBusinessScraperV2:
                 return []
             
             all_businesses = []
+            page_count = 0
+            max_pages = self.mode_config.get('max_pages', 1)
             
-            # Get list of business links - try multiple selectors
-            business_links = await self.page.query_selector_all('a.hfpxzc')
-            if not business_links:
-                # Try alternative selectors
-                business_links = await self.page.query_selector_all('a[data-cid]')
-            if not business_links:
-                # Try another approach - look for business cards
-                business_links = await self.page.query_selector_all('.VkpGBb > a')
-            if not business_links:
-                # Last resort - any link in the results area
-                business_links = await self.page.query_selector_all('.rllt__details')
+            while page_count < max_pages:
+                logger.info(f"Processing page {page_count + 1} of {max_pages}")
                 
-            logger.info(f"Found {len(business_links)} business elements to process")
-            
-            # Process each business element
-            for i in range(min(20, len(business_links))):  # Limit to 20 per page
-                try:
-                    # Re-query elements since page might have changed
-                    current_elements = await self.page.query_selector_all('.rllt__details')
-                    if i >= len(current_elements):
-                        break
+                # Get list of business links - try multiple selectors
+                business_links = await self.page.query_selector_all('a.hfpxzc')
+                if not business_links:
+                    # Try alternative selectors
+                    business_links = await self.page.query_selector_all('a[data-cid]')
+                if not business_links:
+                    # Try another approach - look for business cards
+                    business_links = await self.page.query_selector_all('.VkpGBb > a')
+                if not business_links:
+                    # Last resort - any link in the results area
+                    business_links = await self.page.query_selector_all('.rllt__details')
+                    
+                logger.info(f"Found {len(business_links)} business elements on page {page_count + 1}")
+                
+                # Process each business element
+                for i in range(min(20, len(business_links))):  # Limit to 20 per page
+                    try:
+                        # Re-query elements since page might have changed
+                        current_elements = await self.page.query_selector_all('.rllt__details')
+                        if i >= len(current_elements):
+                            break
+                            
+                        element = current_elements[i]
                         
-                    element = current_elements[i]
+                        # Get the business name first
+                        name_elem = await element.query_selector('.OSrXXb')
+                        if not name_elem:
+                            name_elem = await element.query_selector('.qBF1Pd')
+                        business_name = await name_elem.inner_text() if name_elem else f"Business {i+1}"
+                        
+                        logger.info(f"Processing business {i+1}/{min(20, len(business_links))}: {business_name}")
+                        
+                        # Find the clickable link within this element
+                        parent_elem = await element.evaluate_handle('(el) => el.closest("a")')
+                        if parent_elem:
+                            # Click on the business
+                            await parent_elem.click()
+                            await asyncio.sleep(2)  # Wait for details to load
+                        else:
+                            # Try clicking the element itself
+                            await element.click()
+                            await asyncio.sleep(2)
+                        
+                        # Store the current URL before extracting details
+                        current_url = self.page.url
+                        
+                        # Extract business details from the side panel
+                        business = await self.extract_business_details(business_name)
+                        
+                        if business:
+                            # Make sure we have the correct GBP URL
+                            business['gbp_url'] = current_url
+                            all_businesses.append(business)
+                        
+                        # Go back to search results
+                        await self.page.go_back()
+                        await asyncio.sleep(1)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing business {i+1}: {str(e)}")
+                        continue
+                
+                page_count += 1
+                
+                # Check if there's a next page and we haven't reached the limit
+                if page_count < max_pages and await self.has_next_page():
+                    logger.info(f"Moving to page {page_count + 1}")
+                    await self.click_next_page()
+                    await self.polite_delay()
+                else:
+                    break
                     
-                    # Get the business name first
-                    name_elem = await element.query_selector('.OSrXXb')
-                    if not name_elem:
-                        name_elem = await element.query_selector('.qBF1Pd')
-                    business_name = await name_elem.inner_text() if name_elem else f"Business {i+1}"
-                    
-                    logger.info(f"Processing business {i+1}/{min(20, len(business_links))}: {business_name}")
-                    
-                    # Find the clickable link within this element
-                    parent_elem = await element.evaluate_handle('(el) => el.closest("a")')
-                    if parent_elem:
-                        # Click on the business
-                        await parent_elem.click()
-                        await asyncio.sleep(2)  # Wait for details to load
-                    else:
-                        # Try clicking the element itself
-                        await element.click()
-                        await asyncio.sleep(2)
-                    
-                    # Store the current URL before extracting details
-                    current_url = self.page.url
-                    
-                    # Extract business details from the side panel
-                    business = await self.extract_business_details(business_name)
-                    
-                    if business:
-                        # Make sure we have the correct GBP URL
-                        business['gbp_url'] = current_url
-                        all_businesses.append(business)
-                    
-                    # Go back to search results
-                    await self.page.go_back()
-                    await asyncio.sleep(1)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing business {i+1}: {str(e)}")
-                    continue
-                    
-            logger.info(f"Extracted {len(all_businesses)} businesses for {search_query}")
+            logger.info(f"Extracted {len(all_businesses)} businesses for {search_query} across {page_count} pages")
             return all_businesses
             
         except PlaywrightTimeout:
@@ -199,6 +214,19 @@ class GoogleBusinessScraperV2:
         except Exception as e:
             logger.error(f"Error searching for {search_query}: {str(e)}")
             return []
+    
+    async def has_next_page(self):
+        """Check if there's a next page of results"""
+        next_button = await self.page.query_selector('a#pnnext')
+        return next_button is not None
+    
+    async def click_next_page(self):
+        """Click the next page button"""
+        await self.check_session_break()
+        await self.page.click('a#pnnext')
+        await self.page.wait_for_load_state('networkidle')
+        # Wait for new results to load
+        await asyncio.sleep(2)
     
     async def extract_business_details(self, business_name):
         """Extract business information from the detail panel"""

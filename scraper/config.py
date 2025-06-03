@@ -56,7 +56,7 @@ SCRAPE_MODES = {
     'debug': {
         'locations': 1,
         'categories': 1,
-        'max_pages': 1,
+        'max_pages': 2,  # Test pagination in debug mode
         'headless': False,  # Show browser for debugging
         'description': 'Debug mode with visible browser'
     }
